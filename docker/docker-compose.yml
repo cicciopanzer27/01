@@ -1,0 +1,174 @@
+version: '3.8'
+
+services:
+  # Main optimization service
+  mia-optimizer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    container_name: mia-optimizer
+    volumes:
+      - ../data:/home/mia/data:ro
+      - ../results:/home/mia/results:rw
+      - ../logs:/home/mia/logs:rw
+    environment:
+      - MIA_LOG_LEVEL=INFO
+      - MIA_CONFIG_PATH=/home/mia/config/production.yaml
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+  # Monitoring and visualization service
+  mia-monitor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: production
+    container_name: mia-monitor
+    command: ["mia-monitor", "--host", "0.0.0.0", "--port", "8080"]
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../results:/home/mia/results:ro
+      - ../logs:/home/mia/logs:ro
+    environment:
+      - MIA_MONITOR_MODE=dashboard
+      - MIA_REFRESH_INTERVAL=5
+    networks:
+      - mia-network
+    depends_on:
+      - mia-optimizer
+    restart: unless-stopped
+
+  # Benchmark service
+  mia-benchmark:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: benchmark
+    container_name: mia-benchmark
+    volumes:
+      - ../benchmarks:/home/mia/benchmarks:ro
+      - ../results:/home/mia/results:rw
+    environment:
+      - MIA_BENCHMARK_MODE=continuous
+      - MIA_BENCHMARK_INTERVAL=3600  # Run every hour
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+  # Distributed coordinator (for multi-node setups)
+  mia-coordinator:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: distributed
+    container_name: mia-coordinator
+    command: ["python", "-m", "mia_simbolic.distributed.coordinator"]
+    ports:
+      - "8081:8081"
+    environment:
+      - MIA_COORDINATOR_MODE=master
+      - MIA_CLUSTER_SIZE=3
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+  # Distributed worker 1
+  mia-worker-1:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: distributed
+    container_name: mia-worker-1
+    command: ["python", "-m", "mia_simbolic.distributed.worker", "--coordinator", "mia-coordinator:8081"]
+    environment:
+      - MIA_WORKER_ID=1
+      - MIA_WORKER_RESOURCES=cpu:4,memory:8GB
+    networks:
+      - mia-network
+    depends_on:
+      - mia-coordinator
+    restart: unless-stopped
+
+  # Distributed worker 2
+  mia-worker-2:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: distributed
+    container_name: mia-worker-2
+    command: ["python", "-m", "mia_simbolic.distributed.worker", "--coordinator", "mia-coordinator:8081"]
+    environment:
+      - MIA_WORKER_ID=2
+      - MIA_WORKER_RESOURCES=cpu:4,memory:8GB
+    networks:
+      - mia-network
+    depends_on:
+      - mia-coordinator
+    restart: unless-stopped
+
+  # Redis for caching and coordination
+  redis:
+    image: redis:7-alpine
+    container_name: mia-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+  # PostgreSQL for persistent storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: mia-postgres
+    environment:
+      - POSTGRES_DB=mia_simbolic
+      - POSTGRES_USER=mia
+      - POSTGRES_PASSWORD=mia_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ../scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+  # Jupyter notebook for interactive development
+  jupyter:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: development
+    container_name: mia-jupyter
+    command: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root"]
+    ports:
+      - "8888:8888"
+    volumes:
+      - ../examples:/home/mia/examples:rw
+      - ../notebooks:/home/mia/notebooks:rw
+      - ../data:/home/mia/data:ro
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=mia-simbolic-token
+    networks:
+      - mia-network
+    restart: unless-stopped
+
+networks:
+  mia-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+volumes:
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+

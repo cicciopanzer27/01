@@ -48,7 +48,7 @@ class TestMultiObjectiveProblem(unittest.TestCase):
         original_beta = problem.beta
         original_gamma = problem.gamma
         
-        problem.update_weights(alpha=0.8, beta=0.1, gamma=0.1)
+        problem.update_weights(alpha=0.5, beta=0.3, gamma=0.2)
         
         self.assertNotEqual(problem.alpha, original_alpha)
         self.assertNotEqual(problem.beta, original_beta)

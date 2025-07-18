@@ -9,7 +9,7 @@ import os
 import yaml
 import logging
 from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,8 @@ class Config(BaseModel):
     validation_frequency: int = Field(10, description="Frequency of validation checks")
     validation_split: float = Field(0.2, description="Fraction of data to use for validation")
     
-    @validator('log_level')
+    @field_validator('log_level')
+    @classmethod
     def validate_log_level(cls, v):
         """Validate that log_level is a valid logging level."""
         valid_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -58,17 +59,18 @@ class Config(BaseModel):
             raise ValueError(f"Log level must be one of {valid_levels}")
         return v.upper()
     
-    @validator('device')
+    @field_validator('device')
+    @classmethod
     def validate_device(cls, v):
         """Validate that device is either 'cpu' or 'cuda'."""
         if v not in ['cpu', 'cuda']:
             raise ValueError("Device must be either 'cpu' or 'cuda'")
         return v
     
-    class Config:
-        """Pydantic configuration."""
-        validate_assignment = True
-        extra = "forbid"
+    model_config = ConfigDict(
+        validate_assignment=True,
+        extra="forbid"
+    )
 
 
 def load_config(config_path: Optional[str] = None) -> Config:
